@@ -22,6 +22,19 @@ The first deploy is always the hardest. Vercel for the front end is straightforw
 ### LLM hallucination in substitutions
 The LLM will sometimes suggest substitutions that are wrong (wrong role, regionally unavailable, technically infeasible). The mitigation is provenance discipline plus user_corrections capture, not preventing it upfront. Be honest about confidence in the UI.
 
+### Schema gaps from stress testing (Saturday evening)
+
+Stress-testing the role list against five real dishes (gumbo, Wellington, banh mi, pizza, turducken) exposed two real schema gaps that need to be fixed before substantial seed content is created:
+
+1. **Recipes cannot reference other recipes as sub-recipes.** Most non-trivial recipes use sub-recipes (sauces, stocks, dressings, pastry creams, duxelles, etc.). The `recipe_ingredients` table only links to `ingredients`, not to other `recipes`. Migration 0003 will add a `recipe_sub_recipes` join table.
+
+2. **No model for dish pairings.** Companion dishes served alongside a primary dish (potato salad on gumbo, crema on tinga, naan with dal). Migration 0003 will add a `dish_pairings` table with metadata for contrast dimensions, synergy notes, and popularity tier.
+
+Both gaps are scheduled to be addressed first thing Sunday morning. Risk: if these are deferred and substantial seed content is created without them, the seed will need rework.
+
+### Pastry roles unvalidated against a real pastry dish
+The pastry roles (structural_flour, lamination_fat, tenderizing_fat, etc.) were added during the stress test conversation but no actual pastry dish was walked end-to-end. Risk: when a real pastry dish is seeded (croissant, tarte tatin, anything with serious bake science), the pastry roles may need revision. Mitigation: walk one pastry dish before seeding multiple pastry items.
+
 ## Unknowns
 
 ### What food truck operators actually want from a tool like this
@@ -36,6 +49,9 @@ This is a differentiated feature but may be too clever. If Toast interviewers fi
 ### Right pricing model long-term
 v1 is free. v1.1 might add a paid tier (invoice ingestion, menu planning). The right price point and packaging is unknown. Not a v1 problem.
 
+### Whether the role list converges or keeps growing
+The first stress test exposed gaps. The fifth still exposed one (turducken's nested protein layers and stuffing-as-interstitial-layer). At some point real users hitting unexpected dishes will keep finding edge cases. The bet is that the user_corrections table catches these and grows the role list organically. If it does not, the role list will need periodic curated review.
+
 ## Bets we are making
 
 ### Public market data is sufficient for useful output
@@ -49,6 +65,9 @@ We are betting this user is reachable, has a real problem, and is interesting en
 
 ### One week is enough to ship a viable demo
 Tight but real with 24 focused hours. Risk is highest if the USDA parser or deployment hits unexpected friction.
+
+### Stress-testing five dishes is enough role list validation
+We are betting that gumbo, Wellington, banh mi, pizza, and turducken collectively cover enough structural variety that the v1 role list is good enough. If real usage exposes 5+ more roles needed in the first month, we may need to do another structured stress-test pass.
 
 ## Resolved risks
 
