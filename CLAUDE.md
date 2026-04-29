@@ -30,15 +30,19 @@ These are non-negotiable. They reflect Lee's working style and shortcut a lot of
 ## Project state and structure
 
 - Repo root: `C:\Users\hisey\recipe-advisor\`
-- Database: Supabase project (live as of Saturday). Schema is 27 tables. Connection details are in `.env` (not committed).
-- Schema file: `docs/adr/0005-schema-design.md` documents the design rationale. The actual SQL that built it has been run against Supabase.
+- Database: Supabase project named "Food Intellegence" (typo in project name preserved, do not rename). Schema is 29 tables. Connection details are in `.env` (not committed).
+- Schema files: `migrations/` contains the SQL that built and seeded the database.
+  - `0001_initial_schema.sql` (April 26): initial 27-table schema
+  - `0002_role_taxonomy_seed.sql` (April 29): 36 ingredient roles seeded
+  - `0003_recipe_sub_recipes_and_pairings.sql` (April 27): added `recipe_sub_recipes` and `dish_pairings` tables
+- Schema design rationale: `docs/adr/0005-schema-design.md`
 - Stack decisions to be made: front-end framework, hosting, LLM provider. Tracked in ADRs 0001 through 0004.
 
 ## What v1 does
 
 - User pastes a freeform recipe and selects their state or metro
 - Tool parses the recipe into structured ingredients with quantities
-- Tool infers each ingredient's role in the dish (structural aromatic base, primary protein, etc.) and shows the inferred role to the user
+- Tool infers each ingredient's role in the dish from the locked 36-role taxonomy and shows the inferred role to the user
 - Tool returns substitution suggestions ranked by cost impact and role fidelity, with reasoning visible
 - Tool factors current and near-term seasonality and regional availability
 - Tool flags uncertainty rather than asserting confidence it does not have
@@ -56,7 +60,7 @@ These are non-negotiable. They reflect Lee's working style and shortcut a lot of
 
 The project is segmented into six independent streams. Detail in `docs/adr/0006-project-segmentation.md`.
 
-1. Data Layer (schema done, seed pending)
+1. Data Layer (schema done, role taxonomy seeded, ingredient and recipe seed pending)
 2. Ingredient Knowledge Agent (build-time, populates curated rows)
 3. Market Data Agent (fetches USDA, BLS, ERS data)
 4. Recipe Reasoning Engine (runtime LLM logic)
@@ -74,11 +78,20 @@ Every content row in the database has a `provenance` column with values like `hu
 
 Do not bypass this. The whole foundation depends on knowing what is verified versus inferred.
 
+## Engine architecture (decided April 29)
+
+The engine is A+B:
+
+- **A (seed):** human-reviewed LLM output written to the database with appropriate provenance. Ground truth and rails for B.
+- **B (runtime):** LLM research engine that takes a recipe or dish name from a user, decomposes it against the seeded foundation, fills gaps with new rows marked `llm_inferred_*`, and returns substitution advisory.
+
+A is built first (using B with human review at every row), then B runs at runtime. Roles are SLOTS named by FUNCTION; sub-recipes fill slots; substitutions are alternative slot-fillers. Multi-function ingredients use primary role + notes (not multiple rows).
+
 ## Current focus
 
 (Update this line at the start of every session.)
 
-Current focus: Setting up documentation and beginning seed content.
+Current focus: Role taxonomy locked at 36 (migration 0002 applied April 29). Next: design the engine prompt for runtime LLM research, build Ingredient Knowledge Agent skeleton, begin seed of ingredients and substitutions via human-reviewed LLM output.
 
 ## How to update CLAUDE.md
 
@@ -93,3 +106,4 @@ When something material changes (a stack decision, a major scope adjustment, a n
 - Daily status: `docs/status.md`
 - Architecture decisions: `docs/adr/`
 - Source code (when it exists): `src/`
+- Schema migrations: `migrations/`

@@ -63,3 +63,73 @@ Tomorrow morning's first session, in Claude Code:
 4. **Fourth task (if time): seed 5 to 10 dishes Lee knows cold.** Hand-curated, verified provenance. Probably gumbo, beef Wellington, banh mi (since we walked them), plus a couple of food-truck-relevant dishes (al pastor tacos, a ramen, something else).
 
 End of Sunday goal: ~37 roles in database, schema for sub-recipes and pairings deployed, agent skeleton working in dry-run mode, 5 to 10 dishes seeded.
+
+### Sunday, April 27
+
+**What got done:**
+- Migration 0003 written, applied to Supabase, and committed: `recipe_sub_recipes` and `dish_pairings` tables added, plus `pairing_popularity_tier` enum and triggers.
+- Schema now at 29 tables.
+- Five commits during this session.
+
+**What is blocked or open:**
+- Role taxonomy still being refined, not yet locked.
+- Migration 0002 (role taxonomy seed) deferred to next session pending role list lock.
+
+**What is next:**
+- Lock role taxonomy.
+- Write and apply migration 0002.
+
+### Tuesday, April 28
+
+**What got done:**
+- Project documentation review session.
+- Working agreement, voice, and operating discipline rules consolidated into Project Knowledge for chat continuity.
+- Role taxonomy work continued: identified gaps including bulk vs signature vegetable split (likely fake), need for ingredient_aliases and substitution_purpose status verification, sauces and condiments deferral.
+
+**What is blocked or open:**
+- Role taxonomy still not locked. Approximately 22 to 25 roles drafted of an estimated 37.
+- Migration 0002 still pending lock.
+
+**What is next:**
+- Verify schema state in Supabase before any further work.
+- Lock the role taxonomy.
+
+### Wednesday, April 29
+
+**What got done:**
+- **Schema verification:** ran direct queries against Supabase to verify true state. Confirmed 29 tables (not 27 as some docs suggested). Confirmed `ingredient_aliases` and `substitution_purpose` enum already committed in migration 0001 (earlier docs incorrectly said "proposed"). Confirmed full enum list, foreign keys, indexes, and unique constraints. All FK wiring for `ingredient_roles` is in place across `recipe_ingredients`, `dish_ingredient_roles`, `dish_archetype_components`, `recipe_sub_recipes`, `substitutions`.
+- **Schema scope acknowledgment:** the schema includes more tables than v1 strictly needs (techniques, equipment, cooking_methods, dish_archetypes, flavor_attributes, sensory_doneness_cues, adjustment_guidance). These remain empty and unused by v1 engine. Documented in CLAUDE.md and spec docs as v1 vs post-v1 subsets.
+- **Role taxonomy locked at 36 roles** via migration `0002_role_taxonomy_seed.sql`. Provenance: `human_verified_expert`. Stress-tested against gumbo, banh mi, Wellington, margherita, turducken, Thai green curry, and mole poblano. Final list reflects:
+  - Slot-based framework: roles are SLOTS named by their FUNCTION; sub-recipes fill slots; substitutions are alternative slot-fillers
+  - `starch_thickener` renamed to `thickening_agent` (covers nuts, bread, starches, all thickening mechanisms)
+  - `bulk_vegetable` and `signature_vegetable` collapsed into single `vegetable_substance`
+  - New roles added: `sauce_body`, `flavor_paste`, `pickle_component`, `condiment_component`, `sauce_component`, `dressing_component`, `glaze_component`, `coating_dry`, `emulsifier`, `smoke_component`, `other_component` (catch-all)
+  - Multi-function ingredients use primary role + notes, NOT multiple rows
+- **Engine architecture decided: A+B.** Human-reviewed LLM seed (A) provides ground truth and rails for runtime LLM research engine (B). Build A first using B with human review at every row, then run B at runtime against seeded foundation.
+- **Documentation reconciliation:** identified that disk docs and claude.ai Project Knowledge had duplicated and drifted documentation. Decision: disk docs are authoritative single source of truth. Project Knowledge files in claude.ai will be deleted. Stale disk docs (CLAUDE.md, status.md, risks.md, milestones.md, ADR 0005) updated to reflect current state.
+
+**What is blocked or open:**
+- Engine prompt design (B): not started. Will be designed in claude.ai chat (not Claude Code) before implementation.
+- Catch-all monitoring view (migration 0004): planned but deferred. Lee requested periodic execution + email-report mechanism for catch-all pattern review. Not v1-blocking but should exist before runtime engine generates significant catch-all data.
+- Substitutions table has no unique constraint on (original_ingredient_id, substitute_ingredient_id, role_id, substitution_purpose). Application logic must dedupe before insert. Schema fix deferred.
+- Ingredient_aliases.alias_name is indexed but not unique. Same alias could map to two ingredients. Schema fix deferred.
+- Dishes table has no unique constraint on (name, cuisine_id). Schema fix deferred.
+- Dish-scoped substitutions (Option 2): schema change to add optional `dish_id` FK to substitutions table. Decided in principle, deferred until v1 build hits real failures with current cuisine + role scoping.
+
+**What is next:**
+
+1. **Engine prompt design (in claude.ai chat).** The runtime LLM research engine prompt that:
+   - Pulls 36 role names and descriptions from `ingredient_roles` at runtime
+   - Decomposes a recipe (or dish name) into ingredients with role assignments
+   - Identifies and recursively decomposes sub-recipes
+   - Marks new rows with `llm_inferred_*` provenance
+   - Returns substitution suggestions scoped by role
+   - Uses notes for multi-function ingredients
+
+2. **Ingredient Knowledge Agent skeleton (Milestone 2).** Python script connecting to Supabase via service role from environment variables (NOT hardcoded). Dry-run mode first. Lee reviews output before any database mutations.
+
+3. **Begin seeding (Milestone 1 continuation).** Use the engine to research and propose ingredient and substitution rows for a small set of food-truck-relevant dishes. Human review every row before commit.
+
+4. **Continue stack decisions:** front-end framework, backend hosting, exact Claude model.
+
+End of week 1 goal stands: viable v1 demo with at least one real recipe parsed end-to-end using real USDA market data.

@@ -22,18 +22,37 @@ The first deploy is always the hardest. Vercel for the front end is straightforw
 ### LLM hallucination in substitutions
 The LLM will sometimes suggest substitutions that are wrong (wrong role, regionally unavailable, technically infeasible). The mitigation is provenance discipline plus user_corrections capture, not preventing it upfront. Be honest about confidence in the UI.
 
-### Schema gaps from stress testing (Saturday evening)
-
-Stress-testing the role list against five real dishes (gumbo, Wellington, banh mi, pizza, turducken) exposed two real schema gaps that need to be fixed before substantial seed content is created:
-
-1. **Recipes cannot reference other recipes as sub-recipes.** Most non-trivial recipes use sub-recipes (sauces, stocks, dressings, pastry creams, duxelles, etc.). The `recipe_ingredients` table only links to `ingredients`, not to other `recipes`. Migration 0003 will add a `recipe_sub_recipes` join table.
-
-2. **No model for dish pairings.** Companion dishes served alongside a primary dish (potato salad on gumbo, crema on tinga, naan with dal). Migration 0003 will add a `dish_pairings` table with metadata for contrast dimensions, synergy notes, and popularity tier.
-
-Both gaps are scheduled to be addressed first thing Sunday morning. Risk: if these are deferred and substantial seed content is created without them, the seed will need rework.
-
 ### Pastry roles unvalidated against a real pastry dish
-The pastry roles (structural_flour, lamination_fat, tenderizing_fat, etc.) were added during the stress test conversation but no actual pastry dish was walked end-to-end. Risk: when a real pastry dish is seeded (croissant, tarte tatin, anything with serious bake science), the pastry roles may need revision. Mitigation: walk one pastry dish before seeding multiple pastry items.
+The pastry roles (`dough_structure`, `structural_fat`, `flavor_fat`, `leavener`) were locked in migration 0002 but no actual pastry dish was walked end-to-end as part of the role lock stress tests. Stress tests covered gumbo, banh mi, Wellington, margherita, turducken, Thai green curry, and mole poblano. None of these are pastry-forward. Risk: when a real pastry-heavy dish is seeded (croissant, tarte tatin, anything with serious bake science), the pastry roles may need revision via migration 0005+. Mitigation: walk one pastry dish before seeding multiple pastry items. Catch-all role (`other_component`) and pattern review will surface promotion candidates.
+
+### Engine prompt quality (new, April 29)
+The runtime LLM research engine (B in the A+B architecture) is only as good as its prompt. The prompt has to consistently:
+- Assign roles from the locked 36-role list, not invent new ones
+- Recognize when a slot needs a sub-recipe versus a single ingredient
+- Use the catch-all (`other_component`) sparingly, only when no real role fits
+- Maintain provenance discipline on every row written
+
+If the prompt drifts under load or across cuisines, data fragments. Mitigation: prompt design happens in claude.ai chat (not Claude Code) where iterative refinement and human review of output samples is easiest. Engine output is reviewed by a human before any database write during seed phase. At runtime, all new rows are marked `llm_inferred_low_confidence` until reviewed.
+
+### Substitutions table has no unique constraint (new, April 29)
+`substitutions` has no unique constraint on `(original_ingredient_id, substitute_ingredient_id, role_id, substitution_purpose)`. The same substitution can be inserted multiple times. Application logic must dedupe before insert. Schema fix deferred (would be a future migration). Risk: if seed engine writes duplicates, substitution engine returns duplicate suggestions to user.
+
+### Ingredient_aliases.alias_name is not unique (new, April 29)
+The alias name field is indexed for query performance but has no unique constraint. The same alias name could map to two different canonical ingredients. Recipe parser would have ambiguous resolution. Schema fix deferred.
+
+### Documentation drift (new, April 29)
+The April 29 reconciliation revealed that disk docs and claude.ai Project Knowledge had drifted from each other and from the database state. Reconciled on April 29 (disk = single source of truth). Risk: future drift if status.md and CLAUDE.md are not updated each session. Mitigation: update at end of each session per the discipline already in CLAUDE.md.
+
+## Resolved risks
+
+### Recipes cannot reference other recipes as sub-recipes (resolved 2026-04-27)
+Resolved by migration 0003 (`recipe_sub_recipes` table). Recipes can now reference other recipes as components with role context, quantity, unit, step order, and notes. Cycle prevention enforced by application code (CHECK constraint cannot catch multi-hop cycles).
+
+### No model for dish pairings (resolved 2026-04-27)
+Resolved by migration 0003 (`dish_pairings` table). Companion dishes can be linked with `contrast_dimensions` array, `synergy_notes`, and `popularity_tier` (universal, regional, insider_knowledge, innovative).
+
+### Role taxonomy unlocked (resolved 2026-04-29)
+Resolved by migration 0002 (role taxonomy seed, 36 roles). Locked through stress-testing against 7 dishes spanning multiple cuisines. Slot-based framework adopted: roles are SLOTS named by FUNCTION; sub-recipes fill slots; substitutions are alternative slot-fillers. Catch-all role (`other_component`) handles edge cases with required notes; pattern-review monitoring view planned for migration 0004.
 
 ## Unknowns
 
@@ -44,13 +63,13 @@ We have hypothesized but not validated. Closest thing to validation is Lee's dom
 Likely good for Western and East Asian cuisines, less reliable for cuisines underrepresented in training data. The user_corrections table will surface where it fails. v1 ships with the assumption that 70 to 80 percent accuracy on role inference is sufficient.
 
 ### How well the cross-cultural archetype feature lands
-This is a differentiated feature but may be too clever. If Toast interviewers find it gimmicky, the feature is dead weight in the demo. Watch for reactions.
+This is a differentiated feature but may be too clever. If Toast interviewers find it gimmicky, the feature is dead weight in the demo. Watch for reactions. Note: `dish_archetypes` and `dish_archetype_components` tables exist but are empty in v1; archetype-driven cross-cultural reasoning is post-v1.
 
 ### Right pricing model long-term
 v1 is free. v1.1 might add a paid tier (invoice ingestion, menu planning). The right price point and packaging is unknown. Not a v1 problem.
 
 ### Whether the role list converges or keeps growing
-The first stress test exposed gaps. The fifth still exposed one (turducken's nested protein layers and stuffing-as-interstitial-layer). At some point real users hitting unexpected dishes will keep finding edge cases. The bet is that the user_corrections table catches these and grows the role list organically. If it does not, the role list will need periodic curated review.
+The first stress test exposed gaps. The seventh (mole poblano) confirmed coverage but raised the multi-function ingredient question (chipotle = umami + heat + smoke; Mexican chocolate = umami + fat + sweet + spice). Resolved with primary role + notes pattern. At some point real users hitting unexpected dishes will keep finding edge cases. The bet is that the catch-all monitoring view (migration 0004, pending) and user_corrections together catch these and grow the role list organically. If they do not, the role list will need periodic curated review.
 
 ## Bets we are making
 
@@ -66,11 +85,8 @@ We are betting this user is reachable, has a real problem, and is interesting en
 ### One week is enough to ship a viable demo
 Tight but real with 24 focused hours. Risk is highest if the USDA parser or deployment hits unexpected friction.
 
-### Stress-testing five dishes is enough role list validation
-We are betting that gumbo, Wellington, banh mi, pizza, and turducken collectively cover enough structural variety that the v1 role list is good enough. If real usage exposes 5+ more roles needed in the first month, we may need to do another structured stress-test pass.
+### Stress-testing seven dishes is enough role list validation
+We are betting that gumbo, Wellington, banh mi, pizza, turducken, Thai green curry, and mole poblano collectively cover enough structural variety that the v1 role list (36 roles) is good enough. If real usage exposes 5+ more roles needed in the first month, we may need to do another structured stress-test pass. Catch-all monitoring is the early warning system.
 
-## Resolved risks
-
-(Move risks here when they no longer apply, with a note on how they were resolved.)
-
-(none yet)
+### Slot-based role framework holds across cuisines
+We are betting that naming roles by their FUNCTION in the parent recipe (rather than by what they physically are) generalizes across cuisines. Pickle_component fills the same slot whether the pickle is Vietnamese, German, or Korean. If a cuisine has structural patterns the slot framework misses, the catch-all view will surface it.
