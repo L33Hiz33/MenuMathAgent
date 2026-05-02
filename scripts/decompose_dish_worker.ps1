@@ -22,7 +22,7 @@ $ServiceKey = $env:SUPABASE_SERVICE_ROLE_KEY
 $AnthropicKey = $env:ANTHROPIC_API_KEY
 
 $Model = "claude-sonnet-4-5-20250929"
-$MaxTokens = 16000
+$MaxTokens = 32000
 $AnthropicUrl = "https://api.anthropic.com/v1/messages"
 
 if (-not $SupabaseUrl) { Write-Error "SUPABASE_URL not set"; exit 1 }
@@ -144,7 +144,7 @@ $AnthropicBody = @{
 $BodyJson = $AnthropicBody | ConvertTo-Json -Depth 10
 $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($BodyJson)
 
-Write-Host "Calling Anthropic. Model: $Model"
+Write-Host "Calling Anthropic. Model: $Model. Max tokens: $MaxTokens"
 $StartTime = Get-Date
 
 try {
@@ -177,12 +177,13 @@ catch {
 }
 
 # ============================================================
-# STEP 4: Extract output and write result back
+# STEP 4: Extract output, check for truncation, write back
 # ============================================================
 
 $OutputText = $Response.content[0].text
 $InputTokens = $Response.usage.input_tokens
 $OutputTokens = $Response.usage.output_tokens
+$StopReason = $Response.stop_reason
 
 if (-not $OutputText) {
     Invoke-SupabaseRest -Path "decompose_jobs?id=eq.$JobId" -Method "PATCH" -Body @{
@@ -194,7 +195,26 @@ if (-not $OutputText) {
     exit 1
 }
 
-Write-Host "Output length: $($OutputText.Length) chars. Tokens in/out: $InputTokens/$OutputTokens"
+Write-Host "Output length: $($OutputText.Length) chars. Tokens in/out: $InputTokens/$OutputTokens. stop_reason: $StopReason"
+
+# Truncation check: if Anthropic stopped because we hit the token ceiling,
+# the output is incomplete. Mark the job as failed but keep the partial
+# output for inspection.
+if ($StopReason -eq "max_tokens") {
+    $TruncMsg = "Output truncated at max_tokens=$MaxTokens. stop_reason=max_tokens. Real output had $OutputTokens output tokens. Increase max_tokens or split engine work."
+    Invoke-SupabaseRest -Path "decompose_jobs?id=eq.$JobId" -Method "PATCH" -Body @{
+        status = "failed"
+        error_message = $TruncMsg
+        sql_output = $OutputText
+        input_tokens = $InputTokens
+        output_tokens = $OutputTokens
+        prompt_version = $PromptVersion
+        duration_seconds = [math]::Round($Elapsed.TotalSeconds, 2)
+        completed_at = (Get-Date).ToUniversalTime().ToString("o")
+    }
+    Write-Error $TruncMsg
+    exit 1
+}
 
 Write-Host "Writing result to DB..."
 
