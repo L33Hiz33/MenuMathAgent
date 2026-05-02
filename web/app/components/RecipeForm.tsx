@@ -40,7 +40,7 @@ export default function RecipeForm() {
     }
 
     console.log('Form submitted:', { dishName, zipCode, month })
-    alert(`Submitted!\n\nDish: ${dishName}\nZip: ${zipCode}\nMonth: ${month}\n\n(Phase 3 has no backend yet. Check browser console for the data.)`)
+    alert(`Thanks!\n\nMenu Math Agent is in pre-launch development. Your input has been received but not yet processed.\n\nDish: ${dishName}\nZip: ${zipCode}\nMonth: ${month}\n\nFollow along: github.com/L33Hiz33/MenuMathAgent`)
   }
 
   return (
@@ -74,6 +74,11 @@ export default function RecipeForm() {
               and tell you what to substitute, what&apos;s in season, and
               what&apos;s costing more this week.
             </p>
+
+            <div className="mt-6 inline-flex items-center gap-3 border border-amber-700/30 bg-amber-50 px-4 py-2 text-xs uppercase tracking-[0.2em] text-amber-900">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-700" />
+              <span>Pre-launch · form preview only · backend coming soon</span>
+            </div>
           </div>
         </div>
 
