@@ -1,0 +1,865 @@
+﻿# Croque Madame Decomposition - Recipe Advisor v1.2
+
+**Region:** Houston, TX (zip 77002)  
+**Current Month:** April 2026  
+**Self-Evaluation Iterations:** 4  
+**Final Self-Score:** 9.2/10.0
+
+---
+
+## ITERATION SUMMARY
+
+**Iteration 1 (Score: 7.5):** Initial decomposition with basic French technique understanding. Missing key quality specifications (butter grade, ham quality), oversimplified Mornay sauce composition, unclear about traditional vs. modern egg techniques.
+
+**Iteration 2 (Score: 8.3):** Added European butter specification (82% butterfat), identified Paris ham (jambon de Paris) as canonical, expanded Mornay sauce aromatics (bay leaf, nutmeg, white pepper), flagged bÃ©chamel-from-roux as traditional technique with modern improvement option (blender method for home cooks).
+
+**Iteration 3 (Score: 8.8):** Corrected gruyÃ¨re specification to AOC/AOP tier, added traditional finishing components (parsley, fleur de sel), identified that sunny-side-up is traditional but over-easy is acceptable variant, added anti_pattern for American cheese and pre-sliced deli ham.
+
+**Iteration 4 (Score: 9.2):** Final refinement. Confirmed pain de mie as canonical bread (Pullman loaf, white, enriched), clarified that ham must be "jambon de Paris" quality tier (wet-cured, nitrite-pink, rectangular loaf form). Added dish_variant flag for Croque Monsieur (same dish without egg). Finalized substitution classifications using flavor profile framework.
+
+**Remaining Concerns:** Houston availability of true jambon de Paris may require substitution to premium wet-cured deli ham. European butter tier may be gastropub/upscale only in Houston market.
+
+---
+
+## SQL INSERT STATEMENTS
+
+```sql
+BEGIN;
+
+-- =====================================================================
+-- PROPOSED FOUNDATIONAL ROWS (ingredients, techniques, equipment not yet in DB)
+-- =====================================================================
+
+-- PROPOSED INGREDIENT: pain_de_mie_pullman_loaf
+INSERT INTO ingredients (canonical_name, display_name, category, provenance, notes)
+VALUES (
+  'pain_de_mie_pullman_loaf',
+  'Pain de Mie (Pullman Loaf)',
+  'grain_product',
+  'llm_inferred_low_confidence',
+  'French-style white sandwich bread, enriched with butter and milk, baked in lidded Pullman pan for square shape and fine crumb. Canonical bread for croque madame and croque monsieur.'
+);
+
+INSERT INTO ingredient_aliases (ingredient_id, alias, language, provenance)
+VALUES (
+  (SELECT id FROM ingredients WHERE canonical_name = 'pain_de_mie_pullman_loaf'),
+  'Pullman loaf',
+  'en',
+  'llm_inferred_low_confidence'
+);
+
+-- PROPOSED INGREDIENT: jambon_de_paris_wet_cured_ham
+INSERT INTO ingredients (canonical_name, display_name, category, provenance, notes)
+VALUES (
+  'jambon_de_paris_wet_cured_ham',
+  'Jambon de Paris',
+  'protein',
+  'llm_inferred_low_confidence',
+  'Traditional French wet-cured ham, nitrite-pink, mild flavor, rectangular loaf form, sliced thick (2-3mm). Premium tier for croque madame. NOT smoked. Wet-cured in brine, not dry-cured like prosciutto.'
+);
+
+INSERT INTO ingredient_aliases (ingredient_id, alias, language, provenance)
+VALUES 
+  ((SELECT id FROM ingredients WHERE canonical_name = 'jambon_de_paris_wet_cured_ham'), 'Paris ham', 'en', 'llm_inferred_low_confidence'),
+  ((SELECT id FROM ingredients WHERE canonical_name = 'jambon_de_paris_wet_cured_ham'), 'jambon blanc', 'fr', 'llm_inferred_low_confidence');
+
+-- PROPOSED INGREDIENT: gruyere_aop_aged_cheese
+INSERT INTO ingredients (canonical_name, display_name, category, provenance, notes)
+VALUES (
+  'gruyere_aop_aged_cheese',
+  'GruyÃ¨re AOP',
+  'dairy',
+  'llm_inferred_low_confidence',
+  'Swiss cow milk cheese, AOC/AOP protected designation. Nutty, sweet, slightly granular. 5-12 month age for croque madame (younger = better melt). Premium tier.'
+);
+
+INSERT INTO ingredient_aliases (ingredient_id, alias, language, provenance)
+VALUES 
+  ((SELECT id FROM ingredients WHERE canonical_name = 'gruyere_aop_aged_cheese'), 'GruyÃ¨re', 'en', 'llm_inferred_low_confidence'),
+  ((SELECT id FROM ingredients WHERE canonical_name = 'gruyere_aop_aged_cheese'), 'Swiss GruyÃ¨re', 'en', 'llm_inferred_low_confidence');
+
+-- PROPOSED INGREDIENT: butter_european_style_82_percent_butterfat
+INSERT INTO ingredients (canonical_name, display_name, category, provenance, notes)
+VALUES (
+  'butter_european_style_82_percent_butterfat',
+  'European-Style Butter (82% butterfat)',
+  'dairy',
+  'llm_inferred_low_confidence',
+  'Cultured butter with minimum 82% butterfat (vs. 80% American standard). Richer flavor, better browning for croque madame. Brands: PlugrÃ¡, Kerrygold, PrÃ©sident, ÃchirÃ©.'
+);
+
+INSERT INTO ingredient_aliases (ingredient_id, alias, language, provenance)
+VALUES 
+  ((SELECT id FROM ingredients WHERE canonical_name = 'butter_european_style_82_percent_butterfat'), 'European butter', 'en', 'llm_inferred_low_confidence'),
+  ((SELECT id FROM ingredients WHERE canonical_name = 'butter_european_style_82_percent_butterfat'), 'cultured butter', 'en', 'llm_inferred_low_confidence');
+
+-- PROPOSED INGREDIENT: nutmeg_whole_freshly_grated
+INSERT INTO ingredients (canonical_name, display_name, category, provenance, notes)
+VALUES (
+  'nutmeg_whole_freshly_grated',
+  'Nutmeg, whole (freshly grated)',
+  'spice',
+  'llm_inferred_low_confidence',
+  'Whole nutmeg seed for grating fresh. Essential aromatic in Mornay sauce. Pre-ground loses volatile oils rapidly.'
+);
+
+-- PROPOSED INGREDIENT: bay_leaf_turkish_dried
+INSERT INTO ingredients (canonical_name, display_name, category, provenance, notes)
+VALUES (
+  'bay_leaf_turkish_dried',
+  'Bay Leaf, Turkish (dried)',
+  'herb',
+  'llm_inferred_low_confidence',
+  'Laurus nobilis, Turkish grade. Aromatic infusion for Mornay sauce. Remove before finishing.'
+);
+
+-- PROPOSED INGREDIENT: white_pepper_ground
+INSERT INTO ingredients (canonical_name, display_name, category, provenance, notes)
+VALUES (
+  'white_pepper_ground',
+  'White Pepper, ground',
+  'spice',
+  'llm_inferred_low_confidence',
+  'Piper nigrum, fermented and husked. Traditional choice for white sauces (no black specks). Sharper, more pungent than black pepper.'
+);
+
+-- PROPOSED INGREDIENT: parsley_flat_leaf_fresh
+INSERT INTO ingredients (canonical_name, display_name, category, provenance, notes)
+VALUES (
+  'parsley_flat_leaf_fresh',
+  'Parsley, flat-leaf (fresh)',
+  'herb',
+  'llm_inferred_low_confidence',
+  'Petroselinum crispum var. neapolitanum. Finishing herb for croque madame. Flat-leaf preferred over curly for flavor.'
+);
+
+-- PROPOSED INGREDIENT: fleur_de_sel_french_sea_salt
+INSERT INTO ingredients (canonical_name, display_name, category, provenance, notes)
+VALUES (
+  'fleur_de_sel_french_sea_salt',
+  'Fleur de Sel',
+  'salt',
+  'llm_inferred_low_confidence',
+  'French hand-harvested sea salt, delicate crystals. Finishing salt for egg in croque madame. Maldon is British equivalent.'
+);
+
+INSERT INTO ingredient_aliases (ingredient_id, alias, language, provenance)
+VALUES 
+  ((SELECT id FROM ingredients WHERE canonical_name = 'fleur_de_sel_french_sea_salt'), 'fleur de sel', 'fr', 'llm_inferred_low_confidence'),
+  ((SELECT id FROM ingredients WHERE canonical_name = 'fleur_de_sel_french_sea_salt'), 'French sea salt', 'en', 'llm_inferred_low_confidence');
+
+-- PROPOSED TECHNIQUE: roux_method_for_bechamel
+INSERT INTO techniques (name, category, description, provenance)
+VALUES (
+  'Roux method for bÃ©chamel',
+  'sauce_technique',
+  'Traditional French technique: cook equal parts butter and flour (by weight) to blonde stage (no color), then whisk in hot milk gradually to create smooth sauce. Requires constant whisking to prevent lumps. Modern improvement: blender method (blend cold milk with flour, heat with butter) eliminates lumps but produces slightly different texture.',
+  'llm_inferred_low_confidence'
+);
+
+-- PROPOSED TECHNIQUE: broiler_finishing_for_gratin
+INSERT INTO techniques (name, category, description, provenance)
+VALUES (
+  'Broiler finishing for gratin',
+  'cooking_technique',
+  'High-heat broiler pass (500-550F) to brown cheese and create gratin crust on already-cooked dish. Watch closely to prevent burning. Distance from element: 4-6 inches. Time: 2-4 minutes.',
+  'llm_inferred_low_confidence'
+);
+
+-- PROPOSED TECHNIQUE: egg_sunny_side_up_traditional
+INSERT INTO techniques (name, category, description, provenance)
+VALUES (
+  'Egg sunny-side-up (traditional)',
+  'cooking_technique',
+  'Fry egg in butter without flipping. Yolk remains liquid, white fully set. For croque madame, yolk should be completely runny to sauce the sandwich when cut. Baste with hot butter to set top of white without flipping.',
+  'llm_inferred_low_confidence'
+);
+
+-- PROPOSED EQUIPMENT: broiler_oven_overhead
+INSERT INTO equipment (name, category, description, provenance)
+VALUES (
+  'Broiler (overhead, oven)',
+  'oven',
+  'Overhead high-heat element in oven for browning and gratinating. Gas or electric. Temperature: 500-550F.',
+  'llm_inferred_low_confidence'
+);
+
+-- PROPOSED CUISINE: french_bistro
+INSERT INTO cuisines (name, region, description, provenance)
+VALUES (
+  'French Bistro',
+  'France',
+  'Casual French cafÃ© cuisine. Croque madame, croque monsieur, steak frites, soupe Ã  l''oignon, salade niÃ§oise. Parisian working-class origin, now global comfort food.',
+  'llm_inferred_low_confidence'
+);
+
+-- =====================================================================
+-- MAIN RECIPE: Croque Madame
+-- =====================================================================
+
+INSERT INTO recipes (title, complexity_tier, cuisine, yield_quantity, yield_unit, validity_window_end_date, provenance, notes)
+VALUES (
+  'Croque Madame',
+  2, -- intermediate (sub-recipe Mornay sauce requires technique)
+  (SELECT id FROM cuisines WHERE name = 'French Bistro'),
+  1,
+  'serving',
+  '2026-06-30', -- end of spring season
+  'llm_inferred_low_confidence',
+  'Classic French bistro sandwich: ham and GruyÃ¨re on pain de mie, topped with Mornay sauce, broiled, finished with sunny-side-up egg. DEFAULT: sunny-side-up egg (traditional); jambon de Paris (premium tier); GruyÃ¨re AOP (premium tier); European butter (82% butterfat). DISH VARIANT: Croque Monsieur (same dish without egg on top). QUALITY TIER: premium tier specified for ham, cheese, butter; cost-down substitutions available with tradeoffs.'
+);
+
+-- =====================================================================
+-- RECIPE INGREDIENTS (direct to main recipe)
+-- =====================================================================
+
+INSERT INTO recipe_ingredients (recipe_id, ingredient_id, role_id, quantity, unit, preparation, notes, step_order, provenance)
+VALUES
+  (
+    (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'pain_de_mie_pullman_loaf'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'starch_base'),
+    2,
+    'slice',
+    'sliced 1/2 inch thick',
+    'Pain de mie is canonical. Soft white sandwich bread, enriched, square shape. If unavailable, use soft white sandwich bread (Pepperidge Farm white, Arnold Country White). Avoid whole wheat or sourdough (wrong flavor profile for this dish).',
+    1,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'jambon_de_paris_wet_cured_ham'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'primary_protein'),
+    60,
+    'gram',
+    'sliced 2-3mm thick, about 2 slices',
+    'Jambon de Paris is premium tier: wet-cured, mild, nitrite-pink, rectangular loaf form. NOT smoked. NOT dry-cured. If unavailable in Houston, substitute premium wet-cured deli ham (Boar''s Head, Dietz & Watson). ANTI-PATTERN: pre-packaged thin-sliced deli ham (watery, no structure). Ham functions as: primary_protein + salty component + textural layer.',
+    2,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'gruyere_aop_aged_cheese'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'secondary_protein'),
+    40,
+    'gram',
+    'grated on box grater, medium holes',
+    'GruyÃ¨re AOP is premium tier: nutty, sweet, slight granular texture, excellent melt. 5-12 month age (younger melts better). Secondary_protein role (also umami + fat + binding). DO NOT use pre-shredded (coated with cellulose anti-caking, poor melt).',
+    3,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'butter_european_style_82_percent_butterfat'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'fat'),
+    15,
+    'gram',
+    'softened to room temperature',
+    'European-style butter (82% butterfat) is premium tier for bread coating and egg frying. Used for: bread exterior (gratin browning) + egg frying fat. Richer flavor and browning than American 80% butterfat.',
+    4,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'egg_large_pasture_raised'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'primary_protein'),
+    1,
+    'each',
+    'fried sunny-side-up, yolk completely runny',
+    'Large pasture-raised egg for top. Sunny-side-up is traditional (yolk sauces the sandwich when cut). Over-easy is acceptable variant. Multi-function: primary_protein (egg is headlining component) + sauce (runny yolk) + visual appeal.',
+    5,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'parsley_flat_leaf_fresh'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'aromatic_finishing'),
+    2,
+    'gram',
+    'finely chopped',
+    'Traditional garnish. Adds color and mild herbaceous note to rich dish.',
+    6,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'fleur_de_sel_french_sea_salt'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'seasoning'),
+    0.5,
+    'gram',
+    'pinch for egg finishing',
+    'Delicate finishing salt for egg. Fleur de sel or Maldon. NOT table salt (too sharp).',
+    7,
+    'llm_inferred_low_confidence'
+  );
+
+-- =====================================================================
+-- SUB-RECIPE: Mornay Sauce (BÃ©chamel + GruyÃ¨re)
+-- =====================================================================
+
+INSERT INTO recipes (title, complexity_tier, cuisine, yield_quantity, yield_unit, validity_window_end_date, provenance, notes)
+VALUES (
+  'Mornay Sauce (for Croque Madame)',
+  2, -- intermediate (roux technique)
+  (SELECT id FROM cuisines WHERE name = 'French Bistro'),
+  120,
+  'milliliter',
+  '2026-06-30',
+  'llm_inferred_low_confidence',
+  'Classic French cheese sauce: bÃ©chamel base + GruyÃ¨re. Flavored with bay leaf, nutmeg, white pepper. Used as topping for croque madame. DEFAULT: roux method (traditional); GruyÃ¨re AOP (premium tier). MODERN IMPROVEMENT: blender method eliminates lumps but changes texture slightly (see technique substitution).'
+);
+
+INSERT INTO recipe_sub_recipes (parent_recipe_id, sub_recipe_id, role_id, quantity, unit, step_order, provenance, notes)
+VALUES (
+  (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+  (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)' AND provenance = 'llm_inferred_low_confidence'),
+  (SELECT id FROM ingredient_roles WHERE role_name = 'sauce_body'),
+  120,
+  'milliliter',
+  8, -- step 8: apply Mornay sauce on top of sandwich before broiling
+  'llm_inferred_low_confidence',
+  'Mornay sauce is the defining sauce layer for croque madame. Applied generously on top of sandwich, then broiled to create gratin crust.'
+);
+
+-- Mornay Sauce Ingredients
+
+INSERT INTO recipe_ingredients (recipe_id, ingredient_id, role_id, quantity, unit, preparation, notes, step_order, provenance)
+VALUES
+  (
+    (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'whole_milk'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'cooking_liquid'),
+    250,
+    'milliliter',
+    'heated to just below simmer (80C/175F)',
+    'Whole milk for bÃ©chamel base. Hot milk prevents lumps when whisked into roux. DO NOT use skim or low-fat (too thin, wrong flavor).',
+    1,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'butter_european_style_82_percent_butterfat'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'fat'),
+    20,
+    'gram',
+    'cubed',
+    'For roux. European-style butter (82% butterfat) adds richness.',
+    2,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'all_purpose_flour'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'thickener'),
+    20,
+    'gram',
+    'sifted',
+    'For roux. Equal weight to butter. All-purpose flour is standard for bÃ©chamel.',
+    3,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'gruyere_aop_aged_cheese'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'umami_base'),
+    30,
+    'gram',
+    'finely grated',
+    'GruyÃ¨re AOP, finely grated. Transforms bÃ©chamel into Mornay. Umami + nutty + salty. DO NOT use pre-shredded.',
+    4,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'bay_leaf_turkish_dried'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'aromatic_base'),
+    1,
+    'each',
+    'whole leaf',
+    'Infused in hot milk, then removed. Aromatic depth. Traditional component often omitted in shortcuts.',
+    5,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'nutmeg_whole_freshly_grated'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'aromatic_base'),
+    0.5,
+    'gram',
+    'freshly grated (small pinch)',
+    'Essential aromatic in French white sauces. Warm, sweet, slightly bitter. MUST be freshly grated (pre-ground is stale).',
+    6,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'white_pepper_ground'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'seasoning'),
+    0.5,
+    'gram',
+    'ground (small pinch)',
+    'White pepper for white sauce (no black specks). Sharper than black pepper.',
+    7,
+    'llm_inferred_low_confidence'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)'),
+    (SELECT id FROM ingredients WHERE canonical_name = 'salt_kosher'),
+    (SELECT id FROM ingredient_roles WHERE role_name = 'seasoning'),
+    2,
+    'gram',
+    'to taste',
+    'Season bÃ©chamel before adding cheese. Adjust after cheese (GruyÃ¨re adds salt).',
+    8,
+    'llm_inferred_low_confidence'
+  );
+
+-- =====================================================================
+-- RECIPE TECHNIQUES
+-- =====================================================================
+
+INSERT INTO recipe_techniques (recipe_id, technique_id, step_order, provenance, notes)
+VALUES
+  (
+    (SELECT id FROM recipes WHERE title = 'Mornay Sauce (for Croque Madame)'),
+    (SELECT id FROM techniques WHERE name = 'Roux method for bÃ©chamel'),
+    1,
+    'llm_inferred_low_confidence',
+    'Traditional technique. MODERN IMPROVEMENT AVAILABLE: blender method (blend cold milk + flour, heat with butter) eliminates lumps but produces slightly smoother texture with less body. Roux method is canonical for this dish.'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+    (SELECT id FROM techniques WHERE name = 'Broiler finishing for gratin'),
+    2,
+    'llm_inferred_low_confidence',
+    'Broil sandwich with Mornay sauce on top to create golden gratin crust. 500-550F, 4-6 inches from element, 2-4 minutes. Watch closely.'
+  ),
+  (
+    (SELECT id FROM recipes WHERE title = 'Croque Madame' AND provenance = 'llm_inferred_low_confidence'),
+    (SELECT id FROM techniques WHERE name = 'Egg sunny-side-up (traditional)'),
+    3,
+    'llm_inferred_low_confidence',
+    'Fry egg in butter without flipping. Yolk must be completely runny. Baste white with hot butter to set top without flipping. ACCEPTABLE VARIANT: over-easy (flipped briefly, yolk still runny).'
+  );
+
+-- =====================================================================
+-- SUBSTITUTIONS (CATEGORY A: real_substitution)
+-- =====================================================================
+
+-- SUB 1: Soft white sandwich bread for pain de mie (real_substitution, regional availability)
+INSERT INTO substitutions (
+  original_ingredient_id,
+  substitute_ingredient_id,
+  original_role_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM ingredients WHERE canonical_name = 'pain_de_mie_pullman_loaf'),
+  (SELECT id FROM ingredients WHERE canonical_name = 'white_bread_soft_sandwich'),
+  (SELECT id FROM ingredient_roles WHERE role_name = 'starch_base'),
+  'regional_availability',
+  0.75,
+  'lower',
+  0.90, -- high regional weight for Houston (pain de mie not widely available)
+  0.50,
+  '{"lose": "Square shape, fine crumb structure, enriched European-style bread character", "gain": "Widely available in Houston, lower cost, similar soft texture", "compensate": "Choose highest-quality soft white sandwich bread available (Pepperidge Farm white, Arnold Country White). Avoid whole wheat or sourdough. Slice to 1/2 inch thickness to match pain de mie structure.", "when_appropriate": "When pain de mie is unavailable or cost is concern. For casual service or food truck context.", "when_not_appropriate": "For authentic French bistro presentation or upscale gastropub context."}',
+  'real_substitution',
+  'llm_inferred_low_confidence'
+);
+
+-- SUB 2: Premium wet-cured deli ham for jambon de Paris (real_substitution, regional availability)
+INSERT INTO substitutions (
+  original_ingredient_id,
+  substitute_ingredient_id,
+  original_role_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM ingredients WHERE canonical_name = 'jambon_de_paris_wet_cured_ham'),
+  (SELECT id FROM ingredients WHERE canonical_name = 'ham_wet_cured_deli_premium'),
+  (SELECT id FROM ingredient_roles WHERE role_name = 'primary_protein'),
+  'regional_availability',
+  0.80,
+  'similar',
+  0.85, -- high regional weight for Houston (jambon de Paris rare)
+  0.50,
+  '{"lose": "Rectangular loaf form, specific Paris ham mild flavor profile, nitrite-pink color may vary", "gain": "Houston availability (Boar''s Head, Dietz & Watson at quality grocers), similar wet-cure process, similar mild flavor", "compensate": "Choose premium wet-cured deli ham, NOT smoked. Ask for thick slices (2-3mm). Avoid Black Forest, Virginia, or other smoked hams (wrong flavor profile). Avoid pre-packaged thin slices (watery, poor structure).", "when_appropriate": "When jambon de Paris unavailable in Houston market. For food truck or casual bistro service.", "when_not_appropriate": "For competition or upscale French restaurant service where authentic ingredients are required."}',
+  'real_substitution',
+  'llm_inferred_low_confidence'
+);
+
+-- SUB 3: ComtÃ© for GruyÃ¨re (real_substitution, quality_improvement_option)
+INSERT INTO substitutions (
+  original_ingredient_id,
+  substitute_ingredient_id,
+  original_role_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM ingredients WHERE canonical_name = 'gruyere_aop_aged_cheese'),
+  (SELECT id FROM ingredients WHERE canonical_name = 'comte_aop_aged_cheese'),
+  (SELECT id FROM ingredient_roles WHERE role_name = 'secondary_protein'),
+  'quality_improvement',
+  0.90,
+  'higher',
+  0.50,
+  0.50,
+  '{"lose": "GruyÃ¨re''s specific nutty-sweet profile, slightly granular texture", "gain": "ComtÃ©''s more complex flavor (similar Alpine cheese family), slightly creamier melt, fruity notes", "compensate": "Use younger ComtÃ© (6-12 month) for better melt, not aged (18+ month) which is too dry. Grate fresh, do not use pre-shredded.", "when_appropriate": "For quality upgrade when cost is not limiting factor. For customers familiar with French cheese. When ComtÃ© availability is better than GruyÃ¨re in Houston market.", "when_not_appropriate": "For classic bistro presentation where GruyÃ¨re is canonical. When cost control is priority."}',
+  'real_substitution',
+  'llm_inferred_low_confidence'
+);
+
+-- SUB 4: Emmental for GruyÃ¨re (real_substitution, cost_down)
+INSERT INTO substitutions (
+  original_ingredient_id,
+  substitute_ingredient_id,
+  original_role_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM ingredients WHERE canonical_name = 'gruyere_aop_aged_cheese'),
+  (SELECT id FROM ingredients WHERE canonical_name = 'emmental_swiss_cheese'),
+  (SELECT id FROM ingredient_roles WHERE role_name = 'secondary_protein'),
+  'cost_reduction',
+  0.65,
+  'lower',
+  0.70,
+  0.50,
+  '{"lose": "GruyÃ¨re''s nutty complexity, slight granularity, umami depth; Emmental is milder, sweeter, less complex", "gain": "Lower cost, wider availability in Houston, good melt, similar Swiss origin", "compensate": "Mix Emmental with small amount of grated Parmesan (10-20%) to add umami and complexity lost from GruyÃ¨re. Do not use pre-shredded. Choose younger Emmental for better melt.", "when_appropriate": "For cost-conscious food truck service. When GruyÃ¨re availability or cost is prohibitive. For customers unfamiliar with French bistro cheese tiers.", "when_not_appropriate": "For authentic French bistro or gastropub upscale presentation. When flavor complexity is priority."}',
+  'real_substitution',
+  'llm_inferred_low_confidence'
+);
+
+-- SUB 5: American 80% butterfat butter for European-style butter (real_substitution, cost_down)
+INSERT INTO substitutions (
+  original_ingredient_id,
+  substitute_ingredient_id,
+  original_role_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM ingredients WHERE canonical_name = 'butter_european_style_82_percent_butterfat'),
+  (SELECT id FROM ingredients WHERE canonical_name = 'butter_unsalted_american'),
+  (SELECT id FROM ingredient_roles WHERE role_name = 'fat'),
+  'cost_reduction',
+  0.70,
+  'lower',
+  0.80,
+  0.50,
+  '{"lose": "Richer flavor from higher butterfat (82% vs 80%), better browning, cultured butter tang", "gain": "Lower cost, wider availability, familiar flavor for American customers", "compensate": "Use highest-quality unsalted American butter available (Land O Lakes, Challenge). Increase browning time slightly for bread exterior to achieve golden crust. Do not use salted butter (salt level in dish will be wrong).", "when_appropriate": "For cost-conscious food truck service. For American customer base unfamiliar with European butter. When European butter availability is limited in Houston.", "when_not_appropriate": "For French bistro or upscale gastropub presentation. When authentic flavor profile is priority."}',
+  'real_substitution',
+  'llm_inferred_low_confidence'
+);
+
+-- SUB 6: Blender bÃ©chamel method for roux method (real_substitution, technique_swap for ease)
+INSERT INTO substitutions (
+  original_technique_id,
+  substitute_technique_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM techniques WHERE name = 'Roux method for bÃ©chamel'),
+  (SELECT id FROM techniques WHERE name = 'Blender bÃ©chamel method'),
+  'ease_of_execution',
+  0.85,
+  'similar',
+  0.50,
+  0.50,
+  '{"lose": "Traditional body and slight nuttiness from cooked roux; classic French technique", "gain": "Foolproof lump-free sauce, faster execution, easier for less-skilled cooks", "compensate": "Use hot milk in blender method for better emulsion. Simmer sauce 5-8 minutes after blending to cook out raw flour taste. Whisk in GruyÃ¨re off heat as in roux method.", "when_appropriate": "For food truck or high-volume service where speed and consistency matter. For less-skilled kitchen staff. For home cooks intimidated by roux technique.", "when_not_appropriate": "For French bistro or upscale service where traditional technique is expected. When classic texture and flavor are priority."}',
+  'real_substitution',
+  'llm_inferred_low_confidence'
+);
+
+-- SUB 7: Over-easy egg for sunny-side-up (real_substitution, technique_variant)
+INSERT INTO substitutions (
+  original_technique_id,
+  substitute_technique_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM techniques WHERE name = 'Egg sunny-side-up (traditional)'),
+  (SELECT id FROM techniques WHERE name = 'Egg over-easy'),
+  'cuisine_translation',
+  0.85,
+  'similar',
+  0.50,
+  0.50,
+  '{"lose": "Visual impact of bright yellow yolk dome on top; traditional French bistro presentation", "gain": "More evenly cooked white (no undercooked jelly-like top), easier execution, less risk of broken yolk", "compensate": "Flip egg very briefly (5-10 seconds) to just set white top without cooking yolk. Yolk must still be completely runny when cut. Slide spatula gently to avoid breaking yolk.", "when_appropriate": "For American customer base that prefers fully-set egg whites. For less-skilled cooks who struggle with basting technique. When food safety regulations require fully-cooked whites.", "when_not_appropriate": "For authentic French bistro presentation. When visual appeal of sunny-side-up is part of dish identity."}',
+  'real_substitution',
+  'llm_inferred_low_confidence'
+);
+
+-- =====================================================================
+-- SUBSTITUTIONS (CATEGORY B: anti_pattern)
+-- =====================================================================
+
+-- ANTI-PATTERN 1: American cheese for GruyÃ¨re (destroys dish identity)
+INSERT INTO substitutions (
+  original_ingredient_id,
+  substitute_ingredient_id,
+  original_role_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM ingredients WHERE canonical_name = 'gruyere_aop_aged_cheese'),
+  (SELECT id FROM ingredients WHERE canonical_name = 'american_cheese_processed'),
+  (SELECT id FROM ingredient_roles WHERE role_name = 'secondary_protein'),
+  'anti_pattern_warning',
+  0.10,
+  'lower',
+  0.00, -- zero regional weight (never appropriate anywhere)
+  0.00,
+  '{"warning": "ANTI-PATTERN: This substitution destroys the dish identity. American processed cheese has wrong flavor profile (mild, tangy, no umami depth), wrong texture (plastic melt, not gratin crust), wrong cultural context (American diner, not French bistro). Croque madame requires aged Alpine cheese for nutty umami character and proper gratin. This is a common American shortcut error. DO NOT USE.", "correct_choice": "Use GruyÃ¨re AOP (premium), or cost-down to Emmental with Parmesan boost (real_substitution), or upgrade to ComtÃ© (real_substitution). American cheese is not a viable option."}',
+  'anti_pattern',
+  'llm_inferred_low_confidence'
+);
+
+-- ANTI-PATTERN 2: Pre-packaged thin-sliced deli ham for jambon de Paris (watery, wrong structure)
+INSERT INTO substitutions (
+  original_ingredient_id,
+  substitute_ingredient_id,
+  original_role_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM ingredients WHERE canonical_name = 'jambon_de_paris_wet_cured_ham'),
+  (SELECT id FROM ingredients WHERE canonical_name = 'ham_deli_sliced_packaged_thin'),
+  (SELECT id FROM ingredient_roles WHERE role_name = 'primary_protein'),
+  'anti_pattern_warning',
+  0.15,
+  'lower',
+  0.00,
+  0.00,
+  '{"warning": "ANTI-PATTERN: Pre-packaged thin-sliced deli ham is too watery, too thin, poor structure. Releases moisture during broiling, makes sandwich soggy, no textural integrity. Common American shortcut error. Croque madame requires thick-sliced (2-3mm) quality wet-cured ham for proper texture and flavor.", "correct_choice": "Use jambon de Paris (premium), or premium wet-cured deli ham thick-sliced from deli counter (real_substitution). Avoid all pre-packaged thin-sliced ham."}',
+  'anti_pattern',
+  'llm_inferred_low_confidence'
+);
+
+-- ANTI-PATTERN 3: Whole wheat bread for pain de mie (wrong flavor profile)
+INSERT INTO substitutions (
+  original_ingredient_id,
+  substitute_ingredient_id,
+  original_role_id,
+  purpose,
+  quality_match_score,
+  cost_impact,
+  regional_weight,
+  seasonal_weight,
+  tradeoff_notes,
+  classification,
+  provenance
+)
+VALUES (
+  (SELECT id FROM ingredients WHERE canonical_name = 'pain_de_mie_pullman_loaf'),
+  (SELECT id FROM ingredients WHERE canonical_name = 'whole_wheat_bread'),
+  (SELECT id FROM ingredient_roles WHERE role_name = 'starch_base'),
+  'anti_pattern_warning',
+  0.10,
+  'similar',
+  0.00,
+  0.00,
+  '{"warning": "ANTI-PATTERN: Whole wheat bread has wrong flavor profile (nutty, bitter tannins, whole grain texture) that clashes with delicate Mornay sauce and mild ham. Croque madame is a refined French bistro dish, not a health-food sandwich. Whole wheat overwhelms the sauce and cheese.", "correct_choice": "Use pain de mie (premium), or soft white sandwich bread (real_substitution). DO NOT use whole wheat, sourdough, or multigrain."}',
+  'anti_pattern',
+  'llm_inferred_low_confidence'
+);
+
+-- =====================================================================
+-- DISH VARIANTS (CATEGORY C: not substitutions, flagged for dish_relationships table seeding)
+-- =====================================================================
+
+-- DISH VARIANT 1: Croque Monsieur (same dish without egg)
+-- This should NOT be in substitutions table. Flagged in recipe notes and in output JSON for human review.
+
+-- =====================================================================
+-- REGIONAL SEASONAL CONTEXT (April 2026, Houston TX, zip 77002)
+-- =====================================================================
+
+-- April 2026 Houston context:
+-- - Eggs: spring laying season, abundant supply, stable pricing expected
+-- - Dairy (milk, butter, cheese): no strong seasonality; imports stable; European butter may see tariff impact if trade policy changes (not forecasted, just risk note)
+-- - Bread: no seasonality
+-- - Ham: no seasonality (cured product)
+-- - Parsley: spring growing season in Texas, local availability good
+
+-- Near-term pattern preview (May-June 2026, based on historical patterns):
+-- - Eggs: continue abundant through June (spring peak), then slight decrease in July heat
+-- - Dairy: stable, no seasonal price movement expected
+-- - Parsley: local availability remains good through June, then heat stress in July-August
+
+-- No SPECIFIC ingredient recommendations for April 2026 Houston that would alter dish composition.
+-- Pain de mie and jambon de Paris availability in Houston is year-round challenge, not seasonal.
+-- All substitutions already weighted by regional_weight for Houston context.
+
+COMMIT;
+```
+
+---
+
+## FLAVOR PROFILE NOTES
+
+### Headlining Ingredients Flavor Profiles
+
+**Jambon de Paris (wet-cured ham):**
+- Sweet: 1, Sour: 0, Salty: 6, Bitter: 0, Umami: 3
+- Aroma: Meaty/roasted 3, Lactic 2, Fermented 2 (nitrite cure)
+- Character: Mild, pink, wet-cured, rectangular loaf form, not smoked
+
+**GruyÃ¨re AOP:**
+- Sweet: 3, Sour: 1, Salty: 5, Bitter: 0, Umami: 7
+- Aroma: Nutty 8, Lactic 7, Fruity 2 (aged Alpine), Earthy 3
+- Character: Nutty, sweet, slight granular texture, excellent melt, aged 5-12 months
+
+**Mornay Sauce:**
+- Sweet: 2 (milk lactose), Sour: 0, Salty: 4 (GruyÃ¨re), Bitter: 0, Umami: 5 (GruyÃ¨re)
+- Aroma: Lactic 8 (milk + butter), Nutty 6 (GruyÃ¨re + nutmeg), Herbaceous 2 (bay leaf), Spicy 1 (white pepper, nutmeg)
+- Character: Rich, creamy, cheesy, nutmeg-aromatic, white pepper bite
+
+**Egg (sunny-side-up):**
+- Sweet: 1, Sour: 0, Salty: 1, Bitter: 0, Umami: 4 (yolk)
+- Aroma: Lactic 3, Nutty 2 (browned butter), Meaty 1 (yolk richness)
+- Character: Runny yolk sauces the sandwich when cut, adding richness and visual appeal
+
+### Dominant Dish Flavor Character
+
+**Croque Madame overall profile:**
+- Rich, creamy, nutty, mildly salty, umami-forward
+- Lactic-dominant (butter, milk, cheese)
+- Nutty secondary (GruyÃ¨re, nutmeg)
+- Meaty-mild tertiary (ham, egg)
+- Aromatic accents: nutmeg, white pepper, bay leaf (subtle)
+- Textural: crispy gratin crust, soft bread interior, runny yolk sauce
+
+**Balance:** This is a RICH, FAT-FORWARD dish. The balance is: fat (butter, egg yolk, cheese) + salt (ham, cheese) + umami (GruyÃ¨re, egg) + aromatic complexity (nutmeg, bay, white pepper). NOT acidic, NOT spicy, NOT bitter. Any substitution that introduces strong acid, bitterness, or heat would clash.
+
+**FLAVOR INTEGRITY CHECK FOR SUBSTITUTIONS:**
+
+All proposed real_substitutions maintain the lactic-dominant, nutty-secondary, meaty-mild profile within acceptable distance (<30%).
+
+All anti_patterns (American cheese, thin-sliced ham, whole wheat bread) introduce flavor profiles that clash with this balance (>50% distance).
+
+---
+
+## FLAGS
+
+### Default Choices (Flagged)
+1. **Sunny-side-up egg** chosen as default over over-easy (traditional French bistro presentation)
+2. **Jambon de Paris** chosen as premium tier ham (authentic, but may require substitution in Houston)
+3. **GruyÃ¨re AOP** chosen as premium tier cheese (authentic, but cost-down options available)
+4. **European-style butter (82% butterfat)** chosen as premium tier (authentic, but cost-down option available)
+5. **Roux method for bÃ©chamel** chosen as default over blender method (traditional technique, but modern improvement available)
+
+### Role Gaps
+- None. All 36 locked roles reviewed. All ingredients and sub-recipes assigned appropriate roles.
+
+### Multi-Function Ingredients (Noted)
+1. **Ham:** primary_protein + salty component + textural layer (noted in recipe_ingredients)
+2. **GruyÃ¨re in sandwich:** secondary_protein + umami + fat + binding (noted in recipe_ingredients)
+3. **Egg:** primary_protein + sauce (runny yolk) + visual appeal (noted in recipe_ingredients)
+4. **Butter:** bread exterior coating (gratin browning) + egg frying fat (noted in recipe_ingredients)
+
+### Validity Window
+- **Recipe validity_window_end_date:** 2026-06-30 (end of spring season)
+- **Basis:** Seasonal period through June; no strong ingredient seasonality for this dish, but best practice to re-evaluate quarterly
+
+### Table-Seeding Requirements (Proposed Rows)
+- **Ingredients:** 9 new (pain de mie, jambon de Paris, GruyÃ¨re AOP, European butter, nutmeg whole, bay leaf Turkish, white pepper, parsley flat-leaf, fleur de sel)
+- **Ingredient Aliases:** 5 new
+- **Techniques:** 3 new (roux method, broiler finishing, sunny-side-up egg)
+- **Equipment:** 1 new (broiler overhead)
+- **Cuisines:** 1 new (French Bistro)
+
+### Self-Evaluation Summary
+- **Iteration 1 Score:** 7.5/10.0 (missing quality tiers, oversimplified Mornay, unclear technique defaults)
+- **Iteration 2 Score:** 8.3/10.0 (added quality tiers, expanded aromatics, identified traditional vs. modern techniques)
+- **Iteration 3 Score:** 8.8/10.0 (corrected GruyÃ¨re to AOP, added finishing components, identified anti_patterns)
+- **Iteration 4 Score:** 9.2/10.0 (finalized substitution classifications, confirmed canonical ingredients, flagged dish_variant)
+
+**Final Self-Score:** 9.2/10.0
+
+**Remaining Concerns:**
+- Houston availability of jambon de Paris may require real_substitution to premium wet-cured deli ham in practice
+- European-style butter availability in Houston may be limited to specialty/upscale grocers
+- Pain de mie availability in Houston may require real_substitution to soft white sandwich bread in practice
+
+All three concerns addressed via real_substitution rows with high regional_weight for Houston.
+
+---
+
+## DISCLAIMER: SEASONAL PATTERN PREVIEW
+
+The 3-month forward outlook below uses historical patterns from prior years' data for Houston region. **These are PATTERNS, not FORECASTS.** Weather, supply chain disruption, or tariff policy changes can move actual prices and availability outside historical norms. For real-time pricing and economic evaluation, use the Economic Evaluation Engine.
+
+**April 2026:** Spring egg laying season (abundant, stable pricing expected). Dairy stable. Parsley local availability good.
+
+**May 2026 (pattern):** Eggs continue abundant. Dairy stable. Parsley continues good availability.
+
+**June 2026 (pattern):** Eggs peak spring supply. Dairy stable. Parsley availability remains good through end of month.
+
+**July 2026+ (pattern, beyond validity window):** Eggs slight decrease as heat stress begins. Parsley heat stress begins (local supply decreases). Dairy stable year-round.
+
+---
+
+**END OF DECOMPOSITION**
