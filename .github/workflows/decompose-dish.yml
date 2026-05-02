@@ -1,0 +1,31 @@
+name: Decompose Dish
+
+# Triggered manually via API call from Supabase Edge Function.
+# Receives job_id as input, runs the engine, writes result back to DB.
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: 'UUID of the decompose_jobs row to process'
+        required: true
+        type: string
+
+jobs:
+  decompose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run engine worker
+        shell: pwsh
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          ./scripts/decompose_dish_worker.ps1 -JobId $env:JOB_ID
