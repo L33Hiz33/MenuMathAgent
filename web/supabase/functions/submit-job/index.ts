@@ -21,17 +21,24 @@ const GITHUB_REF = "main"
 // Dish input validation: letters, numbers, spaces, hyphens, parens, accents.
 const DISH_NAME_REGEX = /^[\p{L}\p{N}\s\-()',.]{2,80}$/u
 
+// CORS allowed origins. Production domain plus localhost for dev.
+const ALLOWED_ORIGINS = [
+  "https://menumathagent.com",
+  "https://www.menumathagent.com",
+  "http://localhost:3000",
+]
+
 // ============================================================
 // MAIN HANDLER
 // ============================================================
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders() })
+    return new Response("ok", { headers: corsHeaders(req) })
   }
 
   if (req.method !== "POST") {
-    return jsonError("method_not_allowed", "Use POST.", 405)
+    return jsonError(req, "method_not_allowed", "Use POST.", 405)
   }
 
   try {
@@ -41,6 +48,7 @@ Deno.serve(async (req) => {
     // ----- INPUT VALIDATION -----
     if (typeof dish !== "string" || !DISH_NAME_REGEX.test(dish)) {
       return jsonError(
+        req,
         "invalid_dish",
         "Dish name must be 2-80 characters, letters/numbers/spaces/hyphens only.",
         400
@@ -48,18 +56,18 @@ Deno.serve(async (req) => {
     }
 
     if (typeof zip !== "string" || !/^\d{5}$/.test(zip)) {
-      return jsonError("invalid_zip", "Zip must be 5 digits.", 400)
+      return jsonError(req, "invalid_zip", "Zip must be 5 digits.", 400)
     }
 
     if (typeof month !== "string" || month.length === 0) {
-      return jsonError("invalid_month", "Month is required.", 400)
+      return jsonError(req, "invalid_month", "Month is required.", 400)
     }
 
     // ----- INIT SUPABASE CLIENT -----
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
     if (!supabaseUrl || !supabaseKey) {
-      return jsonError("config_error", "Supabase credentials missing.", 500)
+      return jsonError(req, "config_error", "Supabase credentials missing.", 500)
     }
     const supabase = createClient(supabaseUrl, supabaseKey)
 
@@ -72,11 +80,11 @@ Deno.serve(async (req) => {
       .limit(1)
 
     if (cacheError) {
-      return jsonError("cache_lookup_failed", cacheError.message, 500)
+      return jsonError(req, "cache_lookup_failed", cacheError.message, 500)
     }
 
     if (cachedDishes && cachedDishes.length > 0) {
-      return jsonOk({
+      return jsonOk(req, {
         cached: true,
         job_id: null,
         dish: cachedDishes[0],
@@ -98,6 +106,7 @@ Deno.serve(async (req) => {
 
     if (jobError || !jobRows || jobRows.length === 0) {
       return jsonError(
+        req,
         "job_create_failed",
         jobError?.message || "Failed to create job row.",
         500
@@ -109,7 +118,7 @@ Deno.serve(async (req) => {
     // ----- TRIGGER GITHUB ACTION -----
     const githubPat = Deno.env.get("GITHUB_ACTIONS_PAT")
     if (!githubPat) {
-      return jsonError("config_error", "GitHub PAT missing.", 500)
+      return jsonError(req, "config_error", "GitHub PAT missing.", 500)
     }
 
     const dispatchUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW_FILE}/dispatches`
@@ -144,6 +153,7 @@ Deno.serve(async (req) => {
         .eq("id", jobId)
 
       return jsonError(
+        req,
         "github_dispatch_failed",
         `GitHub returned ${dispatchResponse.status}: ${errText}`,
         502
@@ -151,7 +161,7 @@ Deno.serve(async (req) => {
     }
 
     // ----- SUCCESS: RETURN JOB ID -----
-    return jsonOk({
+    return jsonOk(req, {
       cached: false,
       job_id: jobId,
       message: "Job created. Worker triggered. Poll check-job endpoint with job_id.",
@@ -159,6 +169,7 @@ Deno.serve(async (req) => {
 
   } catch (e) {
     return jsonError(
+      req,
       "unhandled_error",
       e instanceof Error ? e.message : String(e),
       500
@@ -170,30 +181,32 @@ Deno.serve(async (req) => {
 // HELPERS
 // ============================================================
 
-function corsHeaders() {
+function corsHeaders(req: Request) {
+  const origin = req.headers.get("origin") || ""
+  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : "https://menumathagent.com"
   return {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   }
 }
 
-function jsonOk(payload: unknown) {
+function jsonOk(req: Request, payload: unknown) {
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...corsHeaders(),
+      ...corsHeaders(req),
     },
   })
 }
 
-function jsonError(code: string, message: string, status: number) {
+function jsonError(req: Request, code: string, message: string, status: number) {
   return new Response(JSON.stringify({ error: { code, message } }), {
     status,
     headers: {
       "Content-Type": "application/json",
-      ...corsHeaders(),
+      ...corsHeaders(req),
     },
   })
 }

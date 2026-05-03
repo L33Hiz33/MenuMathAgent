@@ -9,13 +9,20 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// CORS allowed origins. Production domain plus localhost for dev.
+const ALLOWED_ORIGINS = [
+  "https://menumathagent.com",
+  "https://www.menumathagent.com",
+  "http://localhost:3000",
+]
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders() })
+    return new Response("ok", { headers: corsHeaders(req) })
   }
 
   if (req.method !== "GET") {
-    return jsonError("method_not_allowed", "Use GET.", 405)
+    return jsonError(req, "method_not_allowed", "Use GET.", 405)
   }
 
   try {
@@ -25,6 +32,7 @@ Deno.serve(async (req) => {
 
     if (!jobId || !UUID_REGEX.test(jobId)) {
       return jsonError(
+        req,
         "invalid_job_id",
         "job_id query param must be a valid UUID.",
         400
@@ -35,7 +43,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
     if (!supabaseUrl || !supabaseKey) {
-      return jsonError("config_error", "Supabase credentials missing.", 500)
+      return jsonError(req, "config_error", "Supabase credentials missing.", 500)
     }
     const supabase = createClient(supabaseUrl, supabaseKey)
 
@@ -49,11 +57,11 @@ Deno.serve(async (req) => {
       .limit(1)
 
     if (jobError) {
-      return jsonError("db_query_failed", jobError.message, 500)
+      return jsonError(req, "db_query_failed", jobError.message, 500)
     }
 
     if (!jobRows || jobRows.length === 0) {
-      return jsonError("job_not_found", `No job with id ${jobId}`, 404)
+      return jsonError(req, "job_not_found", `No job with id ${jobId}`, 404)
     }
 
     const job = jobRows[0]
@@ -74,7 +82,7 @@ Deno.serve(async (req) => {
     }
 
     if (job.status === "complete") {
-      return jsonOk({
+      return jsonOk(req, {
         ...base,
         sql_output: job.sql_output,
         prompt_version: job.prompt_version,
@@ -85,7 +93,7 @@ Deno.serve(async (req) => {
     }
 
     if (job.status === "failed") {
-      return jsonOk({
+      return jsonOk(req, {
         ...base,
         error_message: job.error_message,
         sql_output: job.sql_output, // may have partial output (e.g. truncated)
@@ -94,10 +102,11 @@ Deno.serve(async (req) => {
     }
 
     // pending or running: just return status + timing for progress UI
-    return jsonOk(base)
+    return jsonOk(req, base)
 
   } catch (e) {
     return jsonError(
+      req,
       "unhandled_error",
       e instanceof Error ? e.message : String(e),
       500
@@ -109,30 +118,32 @@ Deno.serve(async (req) => {
 // HELPERS
 // ============================================================
 
-function corsHeaders() {
+function corsHeaders(req: Request) {
+  const origin = req.headers.get("origin") || ""
+  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : "https://menumathagent.com"
   return {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   }
 }
 
-function jsonOk(payload: unknown) {
+function jsonOk(req: Request, payload: unknown) {
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...corsHeaders(),
+      ...corsHeaders(req),
     },
   })
 }
 
-function jsonError(code: string, message: string, status: number) {
+function jsonError(req: Request, code: string, message: string, status: number) {
   return new Response(JSON.stringify({ error: { code, message } }), {
     status,
     headers: {
       "Content-Type": "application/json",
-      ...corsHeaders(),
+      ...corsHeaders(req),
     },
   })
 }
