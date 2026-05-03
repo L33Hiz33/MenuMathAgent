@@ -1,25 +1,152 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ]
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+const POLL_INTERVAL_MS = 5000
+const MAX_POLL_DURATION_MS = 10 * 60 * 1000 // 10 minutes
+
+type JobStatus = 'idle' | 'submitting' | 'cache_hit' | 'pending' | 'running' | 'complete' | 'failed'
+
+interface CacheHitResponse {
+  cached: true
+  job_id: null
+  dish: {
+    id: string
+    name: string
+    description: string
+    [key: string]: unknown
+  }
+}
+
+interface JobCreatedResponse {
+  cached: false
+  job_id: string
+  message: string
+}
+
+interface JobStatusResponse {
+  job_id: string
+  status: 'pending' | 'running' | 'complete' | 'failed'
+  dish_input: string
+  zip: string
+  month: string
+  sql_output?: string
+  error_message?: string
+  prompt_version?: string
+  input_tokens?: number
+  output_tokens?: number
+  duration_seconds?: number
+  created_at: string
+  started_at?: string
+  completed_at?: string
+}
+
 export default function RecipeForm() {
-  const currentMonth = new Date().getMonth() // 0-indexed
+  const currentMonth = new Date().getMonth()
 
   const [dishName, setDishName] = useState('')
   const [zipCode, setZipCode] = useState('')
   const [month, setMonth] = useState(MONTHS[currentMonth])
   const [zipError, setZipError] = useState('')
 
+  const [jobStatus, setJobStatus] = useState<JobStatus>('idle')
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [cachedDish, setCachedDish] = useState<CacheHitResponse['dish'] | null>(null)
+  const [jobResult, setJobResult] = useState<JobStatusResponse | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string>('')
+  const [pollStartTime, setPollStartTime] = useState<number | null>(null)
+
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Cleanup polling on unmount or when status moves out of polling
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (jobStatus !== 'pending' && jobStatus !== 'running') {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+      return
+    }
+
+    if (!jobId) return
+
+    const pollOnce = async () => {
+      try {
+        const elapsed = pollStartTime ? Date.now() - pollStartTime : 0
+        if (elapsed > MAX_POLL_DURATION_MS) {
+          setErrorMessage('Polling timed out after 10 minutes. Job may still be running. Try again later.')
+          setJobStatus('failed')
+          return
+        }
+
+        const response = await fetch(
+          `${SUPABASE_URL}/functions/v1/check-job?job_id=${jobId}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+          }
+        )
+
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}))
+          setErrorMessage(`Polling error: ${response.status} ${errBody?.error?.message || 'unknown'}`)
+          setJobStatus('failed')
+          return
+        }
+
+        const data: JobStatusResponse = await response.json()
+
+        if (data.status === 'complete') {
+          setJobResult(data)
+          setJobStatus('complete')
+        } else if (data.status === 'failed') {
+          setJobResult(data)
+          setErrorMessage(data.error_message || 'Job failed without explanation.')
+          setJobStatus('failed')
+        } else {
+          // pending or running: update status and keep polling
+          setJobStatus(data.status)
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setErrorMessage(`Network error during polling: ${msg}`)
+        setJobStatus('failed')
+      }
+    }
+
+    // Poll immediately, then on interval
+    pollOnce()
+    pollTimerRef.current = setInterval(pollOnce, POLL_INTERVAL_MS)
+
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+    }
+  }, [jobStatus, jobId, pollStartTime])
+
   function handleZipChange(value: string) {
-    // Only allow digits, max 5
     const digitsOnly = value.replace(/\D/g, '').slice(0, 5)
     setZipCode(digitsOnly)
-
     if (digitsOnly.length > 0 && digitsOnly.length < 5) {
       setZipError('Zip code must be 5 digits')
     } else {
@@ -27,21 +154,73 @@ export default function RecipeForm() {
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function resetForm() {
+    setJobStatus('idle')
+    setJobId(null)
+    setCachedDish(null)
+    setJobResult(null)
+    setErrorMessage('')
+    setPollStartTime(null)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
     if (zipCode.length !== 5) {
       setZipError('Zip code must be 5 digits')
       return
     }
+    if (!dishName.trim()) return
 
-    if (!dishName.trim()) {
-      return
+    // Reset previous result state
+    setJobId(null)
+    setCachedDish(null)
+    setJobResult(null)
+    setErrorMessage('')
+    setJobStatus('submitting')
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/submit-job`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          dish: dishName.trim(),
+          zip: zipCode,
+          month,
+        }),
+      })
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}))
+        setErrorMessage(`Submit error: ${response.status} ${errBody?.error?.message || 'unknown'}`)
+        setJobStatus('failed')
+        return
+      }
+
+      const data: CacheHitResponse | JobCreatedResponse = await response.json()
+
+      if (data.cached) {
+        setCachedDish(data.dish)
+        setJobStatus('cache_hit')
+        return
+      }
+
+      // Cache miss: start polling
+      setJobId(data.job_id)
+      setPollStartTime(Date.now())
+      setJobStatus('pending')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setErrorMessage(`Network error: ${msg}`)
+      setJobStatus('failed')
     }
-
-    console.log('Form submitted:', { dishName, zipCode, month })
-    alert(`Thanks!\n\nMenu Math Agent is in pre-launch development. Your input has been received but not yet processed.\n\nDish: ${dishName}\nZip: ${zipCode}\nMonth: ${month}\n\nFollow along: github.com/L33Hiz33/MenuMathAgent`)
   }
+
+  const isWorking = jobStatus === 'submitting' || jobStatus === 'pending' || jobStatus === 'running'
+  const isDone = jobStatus === 'complete' || jobStatus === 'failed' || jobStatus === 'cache_hit'
 
   return (
     <section
@@ -77,7 +256,7 @@ export default function RecipeForm() {
 
             <div className="mt-6 inline-flex items-center gap-3 border border-amber-700/30 bg-amber-50 px-4 py-2 text-xs uppercase tracking-[0.2em] text-amber-900">
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-700" />
-              <span>Pre-launch · form preview only · backend coming soon</span>
+              <span>Live engine · async via GitHub Actions · expect 3-5 min on cache miss</span>
             </div>
           </div>
         </div>
@@ -102,7 +281,8 @@ export default function RecipeForm() {
                 value={dishName}
                 onChange={(e) => setDishName(e.target.value)}
                 placeholder="e.g. Tacos al pastor, Banh mi, Tonkotsu ramen"
-                className="w-full border-b border-stone-900/30 bg-transparent py-3 text-lg text-stone-900 placeholder:text-stone-400 focus:border-stone-900 focus:outline-none"
+                disabled={isWorking}
+                className="w-full border-b border-stone-900/30 bg-transparent py-3 text-lg text-stone-900 placeholder:text-stone-400 focus:border-stone-900 focus:outline-none disabled:opacity-50"
                 style={{ fontFamily: 'var(--font-playfair), Georgia, serif' }}
                 required
               />
@@ -125,7 +305,8 @@ export default function RecipeForm() {
                   onChange={(e) => handleZipChange(e.target.value)}
                   placeholder="77002"
                   maxLength={5}
-                  className="w-full border-b border-stone-900/30 bg-transparent py-3 text-lg text-stone-900 placeholder:text-stone-400 focus:border-stone-900 focus:outline-none"
+                  disabled={isWorking}
+                  className="w-full border-b border-stone-900/30 bg-transparent py-3 text-lg text-stone-900 placeholder:text-stone-400 focus:border-stone-900 focus:outline-none disabled:opacity-50"
                   style={{ fontFamily: 'var(--font-playfair), Georgia, serif' }}
                   required
                 />
@@ -145,7 +326,8 @@ export default function RecipeForm() {
                   id="month"
                   value={month}
                   onChange={(e) => setMonth(e.target.value)}
-                  className="w-full appearance-none border-b border-stone-900/30 bg-transparent py-3 text-lg text-stone-900 focus:border-stone-900 focus:outline-none"
+                  disabled={isWorking}
+                  className="w-full appearance-none border-b border-stone-900/30 bg-transparent py-3 text-lg text-stone-900 focus:border-stone-900 focus:outline-none disabled:opacity-50"
                   style={{ fontFamily: 'var(--font-playfair), Georgia, serif' }}
                 >
                   {MONTHS.map((m) => (
@@ -157,15 +339,28 @@ export default function RecipeForm() {
               </div>
             </div>
 
-            {/* Submit */}
-            <div className="pt-6">
+            {/* Submit / Reset */}
+            <div className="flex flex-wrap items-center gap-4 pt-6">
               <button
                 type="submit"
-                className="group inline-flex items-center gap-3 bg-stone-900 px-8 py-4 text-sm uppercase tracking-[0.25em] text-stone-50 transition hover:bg-stone-800"
+                disabled={isWorking}
+                className="group inline-flex items-center gap-3 bg-stone-900 px-8 py-4 text-sm uppercase tracking-[0.25em] text-stone-50 transition hover:bg-stone-800 disabled:opacity-40"
               >
-                <span>Read the markets</span>
-                <span className="transition-transform group-hover:translate-x-1">→</span>
+                <span>{isWorking ? 'Working…' : 'Read the markets'}</span>
+                {!isWorking && (
+                  <span className="transition-transform group-hover:translate-x-1">→</span>
+                )}
               </button>
+
+              {isDone && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="text-xs uppercase tracking-[0.25em] text-stone-600 underline-offset-4 hover:underline"
+                >
+                  New query
+                </button>
+              )}
             </div>
           </form>
 
@@ -197,6 +392,117 @@ export default function RecipeForm() {
             </div>
           </aside>
         </div>
+
+        {/* Status / Result panel */}
+        {jobStatus !== 'idle' && (
+          <div className="mt-12 grid grid-cols-12 gap-8">
+            <div className="col-span-12">
+              {/* WORKING STATES */}
+              {isWorking && (
+                <div className="border border-stone-900/15 bg-stone-50/60 p-8">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-700" />
+                    <span className="text-[11px] uppercase tracking-[0.3em] text-stone-700">
+                      {jobStatus === 'submitting' && 'Submitting'}
+                      {jobStatus === 'pending' && 'Worker queued'}
+                      {jobStatus === 'running' && 'Engine running'}
+                    </span>
+                  </div>
+                  <p
+                    className="mb-2 text-2xl leading-snug text-stone-900"
+                    style={{ fontFamily: 'var(--font-playfair), Georgia, serif' }}
+                  >
+                    {jobStatus === 'submitting' && 'Sending your dish to the engine.'}
+                    {jobStatus === 'pending' && 'Worker is starting up on GitHub Actions.'}
+                    {jobStatus === 'running' && 'Engine is reading the food economy and decomposing your dish.'}
+                  </p>
+                  <p className="text-sm text-stone-600">
+                    {jobStatus === 'submitting' && 'A second or two.'}
+                    {jobStatus === 'pending' && '~30-60 seconds for cold start.'}
+                    {jobStatus === 'running' && '~3-4 minutes total. Self-evaluation iteration loop is the slow part.'}
+                  </p>
+                </div>
+              )}
+
+              {/* CACHE HIT */}
+              {jobStatus === 'cache_hit' && cachedDish && (
+                <div className="border border-stone-900/15 bg-stone-50/60 p-8">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-700" />
+                    <span className="text-[11px] uppercase tracking-[0.3em] text-stone-700">
+                      Cache hit
+                    </span>
+                  </div>
+                  <h3
+                    className="mb-3 text-3xl leading-tight text-stone-900"
+                    style={{ fontFamily: 'var(--font-playfair), Georgia, serif', fontWeight: 700 }}
+                  >
+                    {cachedDish.name as string}
+                  </h3>
+                  <p className="max-w-3xl text-base leading-relaxed text-stone-700">
+                    {cachedDish.description as string}
+                  </p>
+                  <p className="mt-4 text-xs text-stone-500">
+                    Pulled from cache. Full decomposition wiring deferred to Phase 6.
+                  </p>
+                </div>
+              )}
+
+              {/* COMPLETE */}
+              {jobStatus === 'complete' && jobResult && (
+                <div className="border border-stone-900/15 bg-stone-50/60 p-8">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-700" />
+                    <span className="text-[11px] uppercase tracking-[0.3em] text-stone-700">
+                      Complete
+                    </span>
+                    <span className="text-[11px] text-stone-500">
+                      v{jobResult.prompt_version} ·{' '}
+                      {jobResult.duration_seconds?.toFixed(0)}s ·{' '}
+                      {jobResult.output_tokens} output tokens
+                    </span>
+                  </div>
+
+                  <h3
+                    className="mb-4 text-3xl leading-tight text-stone-900"
+                    style={{ fontFamily: 'var(--font-playfair), Georgia, serif', fontWeight: 700 }}
+                  >
+                    {jobResult.dish_input}
+                  </h3>
+
+                  <pre className="max-h-[600px] overflow-auto whitespace-pre-wrap break-words border border-stone-300 bg-white p-4 text-xs leading-relaxed text-stone-800">
+                    {jobResult.sql_output}
+                  </pre>
+                </div>
+              )}
+
+              {/* FAILED */}
+              {jobStatus === 'failed' && (
+                <div className="border border-red-300 bg-red-50 p-8">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="inline-block h-2 w-2 rounded-full bg-red-700" />
+                    <span className="text-[11px] uppercase tracking-[0.3em] text-red-900">
+                      Failed
+                    </span>
+                  </div>
+                  <p className="text-base leading-relaxed text-red-900">
+                    {errorMessage || 'Job failed without explanation.'}
+                  </p>
+                  {jobResult?.sql_output && (
+                    <details className="mt-4 text-sm text-red-900">
+                      <summary className="cursor-pointer underline-offset-4 hover:underline">
+                        Partial output
+                      </summary>
+                      <pre className="mt-3 max-h-[400px] overflow-auto whitespace-pre-wrap break-words border border-red-300 bg-white p-3 text-xs text-stone-800">
+                        {jobResult.sql_output}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   )
