@@ -37,7 +37,23 @@ These block when we wire engine output into the DB.
 
 ## Phase 6: cache logic
 
-9. **Cache lookup is prefix match.** `ilike "${dishLower}%"` in submit-job. "tonkotsu ramen" matches cached "tonkotsu" (good) but cached "tonkotsu ramen" doesn't match query "tonkotsu" (bad). Refine: full-text search, fuzzy match, or canonical name normalization.
+9. **Cache lookup is prefix match.** `ilike "${dishLower}%"` in submit-job. "tonkotsu ramen" matches cached "tonkotsu" (good) but cached "tonkotsu ramen" doesn't match query "tonkotsu" (bad). Real failure cases observed in May 2 test: typo ("bahn mi" vs "banh mi") burns $0.30 on a fresh engine call instead of hitting cache.
+
+   Real cases that all need handling:
+   - Typo: "bahn mi" vs "banh mi"
+   - Plural/singular: "tacos al pastor" vs "taco al pastor"
+   - Article: "the carbonara" vs "carbonara"
+   - Cuisine prefix: "vietnamese banh mi" vs "banh mi"
+   - Regional alternates: "spaghetti carbonara" vs "carbonara"
+
+   Real solution patterns to evaluate (likely combo, not single pick):
+   - A. Fuzzy match in cache lookup via PostgreSQL `pg_trgm` extension (trigram similarity scoring)
+   - B. Pre-flight dish name normalizer using Haiku (~$0.001/call, ~1 sec). "bahn mi" -> "banh mi" -> match cache
+   - C. Suggest-match dropdown as user types, surfaces cached dishes. UX win, real frontend work
+   - D. Spell-check and alias table. Hardcoded alternates ("bahn"->"banh"). Maintenance heavy as catalog grows
+   - E. Combine B + C: Haiku handles unknown typos automatically, dropdown lets users pick canonical names
+
+   Lean E for v2. Don't refactor before Phase 5 is done.
 
 10. **Cache key scope.** Currently dish-name-only. Real question: should cache miss when same dish is queried for different region or month? Engine output is region-and-season-aware per v1.2 prompt. Decision: per-dish cache for v1 demo, per-(dish, region, season) cache for production.
 
